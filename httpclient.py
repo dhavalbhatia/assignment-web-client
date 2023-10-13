@@ -18,6 +18,18 @@
 # Write your own HTTP GET and POST
 # The point is to understand what you have to send and get experience with it
 
+# ------------REFERENCES------------
+
+# 1. query parameters from dict: 
+#    https://stackoverflow.com/questions/40557606/how-to-url-encode-in-python-3
+# 2. default content-type: 
+#    https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/POST
+# 3. format http request:
+#    https://docs.netscaler.com/en-us/citrix-adc/current-release/appexpert/http-callout/http-request-response-notes-format.html#format-of-an-http-request
+#    lab 2 (proxy_client.py)
+# 4. path in request:
+#    https://www.ibm.com/docs/en/cics-ts/5.3?topic=protocol-http-requests
+
 import sys
 import socket
 import re
@@ -41,12 +53,19 @@ class HTTPClient(object):
         return None
 
     def get_code(self, data):
-        return None
+        code = data.split(" ")
+        code = code[1]
+        return int(code)
 
     def get_headers(self,data):
-        return None
+        headers = data.split("\r\n\r\n")[0]
+        return headers
 
     def get_body(self, data):
+        body = data.split("\r\n\r\n")
+        if body[1]:
+            body = body[1]
+            return body
         return None
     
     def sendall(self, data):
@@ -70,11 +89,79 @@ class HTTPClient(object):
     def GET(self, url, args=None):
         code = 500
         body = ""
+        
+        # handle args- need to be key=value pairs joined by &
+        if args != None:
+            query_parameter = urllib.parse.urlencode(args)
+        else:
+            query_parameter = ''
+            
+        parsed_url = urllib.parse.urlparse(url)
+
+        # get path
+        if parsed_url.path != '':
+            path = parsed_url.path    
+        else:
+            path = '/'
+
+        # formatting request to be sent
+        http_request = (f"GET {path}?{query_parameter} HTTP/1.1\r\n"
+                        f"Host: {parsed_url.hostname}\r\n"
+                        f"Connection: close\r\n\r\n")
+
+        # get port number connect to server
+        if parsed_url.port:
+            self.connect(parsed_url.hostname, parsed_url.port)
+        else:
+            self.connect(parsed_url.hostname, 80)
+        
+        self.sendall(http_request)
+        
+        # get response data, code and body
+        data = self.recvall(self.socket)
+        code = self.get_code(data)
+        body = self.get_body(data)
+        self.close()
+        
         return HTTPResponse(code, body)
 
     def POST(self, url, args=None):
         code = 500
         body = ""
+
+        parsed_url = urllib.parse.urlparse(url)
+        
+        # get content
+        if args != None:
+            args = urllib.parse.urlencode(args)
+        else:
+            args = ''
+        
+        # get path
+        if parsed_url.path != '':
+            path = parsed_url.path    
+        else:
+            path = '/'
+        
+        http_request = (f"POST {path} HTTP/1.1\r\n"
+                        f"Host: {parsed_url.hostname}\r\n"
+                        f"Content-Length: {len(args)}\r\n"
+                        f"Content-Type: application/x-www-form-urlencoded\r\n\r\n"
+                        f"{args}")
+
+        # get port and connect to server
+        if parsed_url.port:
+            self.connect(parsed_url.hostname, parsed_url.port)
+        else:
+            self.connect(parsed_url.hostname, 80)
+        
+        self.sendall(http_request)
+        
+        data = self.recvall(self.socket)
+        code = self.get_code(data)
+        body = self.get_body(data)
+        self.close()
+        
         return HTTPResponse(code, body)
 
     def command(self, url, command="GET", args=None):
